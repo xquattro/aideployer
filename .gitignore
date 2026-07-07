@@ -1,3 +1,16 @@
+# Kimlik Bilgileri
 .env
-nginx/ssl/
-webui_cache/
+.env.local
+.env.*.local
+
+# Runtime ve Log Dosyaları
+*.log
+logs/
+
+# İşletim Sistemi Kalıntıları
+.DS_Store
+Thumbs.db
+
+# Veri Klasörleri (Eğer lokal dizine volume bağlanırsa)
+data/
+volumes/

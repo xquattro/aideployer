@@ -38,7 +38,7 @@ services:
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
     depends_on:
       ollama:
-        condition: service_started
+        condition: service_healthy
     networks:
       - ai-network
     healthcheck:
@@ -63,7 +63,7 @@ services:
     networks:
       - ai-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -98,38 +98,13 @@ services:
     networks:
       - ai-network
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.request('http://localhost:5678/healthz', { timeout: 2000 }, (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.end();\""]
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
 
   # ============================================
-  # Nginx - Reverse Proxy + SSL
-  # ============================================
-  nginx:
-    image: nginx:alpine
-    container_name: nginx-ssl
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - webui_cache:/var/cache/nginx
-    depends_on:
-      - open-webui
-      - n8n
-    networks:
-      - ai-network
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # ============================================
-  # Redis - Cache (Opsiyonel - Performans)
+  # Redis - Cache (Performans)
   # ============================================
   redis:
     image: redis:7-alpine
@@ -153,7 +128,6 @@ volumes:
   postgres_data:
   n8n_data:
   redis_data:
-  webui_cache:
 
 networks:
   ai-network:

@@ -2,7 +2,7 @@
 
 ###############################################################################
 # AI Deployer - VPS Kurulum Betiği (Ubuntu Server 26)
-# Ollama + Open WebUI + n8n + Nginx SSL
+# IP ve Port Tabanlı Doğrudan Erişim Yapılandırması
 ###############################################################################
 
 set -e
@@ -15,107 +15,60 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# ============================================
-# Fonksiyonlar
-# ============================================
-
 print_logo() {
     clear
     echo -e "${CYAN}"
     cat << "EOF"
 ╔═══════════════════════════════════════════════════════════════════════════╗
-║                      AI Deployer - VPS Kurulum                           ║
+║                      AI Deployer - VPS Kurulum                            ║
 ║                                                                           ║
-║            Ollama + Open WebUI + n8n + Nginx SSL (Let's Encrypt)        ║
+║                 Ollama + Open WebUI + n8n + Redis                         ║
 ║                                                                           ║
-║                    Ubuntu Server 26 için Optimize                        ║
+║             Sadece IP ve Port Üzerinden Doğrudan Erişim                   ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
 }
 
-info() {
-    echo -e "${BLUE}[ℹ️  BİLGİ]${NC} $1"
-}
-
-success() {
-    echo -e "${GREEN}[✓]${NC} $1"
-}
-
-error() {
-    echo -e "${RED}[✗ HATA]${NC} $1"
-    exit 1
-}
-
-warning() {
-    echo -e "${YELLOW}[⚠️ ]${NC} $1"
-}
-
-# ============================================
-# Sistem Kontrolleri
-# ============================================
+info() { echo -e "${BLUE}[ℹ️ BİLGİ]${NC} $1"; }
+success() { echo -e "${GREEN}[✓]${NC} $1"; }
+error() { echo -e "${RED}[✗ HATA]${NC} $1"; exit 1; }
+warning() { echo -e "${YELLOW}[⚠️]${NC} $1"; }
 
 check_system() {
     info "Sistem kontrolleri yapılıyor..."
-    
     if [[ $EUID -eq 0 ]]; then
-        error "Bu betiği root olarak çalıştırmayın"
+        error "Bu betiği doğrudan root kullanıcısı ile çalıştırmayın. Sudo yetkisine sahip normal bir kullanıcı kullanın."
     fi
-    
     if ! command -v sudo &> /dev/null; then
-        error "sudo gereklidir"
+        error "sudo paketi sistemde bulunamadı."
     fi
-    
-    success "Sistem kontrolleri tamamlandı"
+    success "Sistem kontrolleri tamamlandı."
 }
-
-# ============================================
-# Paket Yöneticisini Güncelle
-# ============================================
 
 update_system() {
-    info "Sistem paketleri güncelleniyor..."
+    info "Sistem paket listesi güncelleniyor..."
     sudo apt-get update
     sudo apt-get upgrade -y
-    success "Sistem güncellendi"
+    success "Sistem paketleri güncellendi."
 }
-
-# ============================================
-# Gerekli Paketleri Kur
-# ============================================
 
 install_dependencies() {
-    info "Gerekli paketler kuruluyordu..."
-    
+    info "Gerekli bağımlılıklar kuruluyor..."
     sudo apt-get install -y \
-        curl \
-        wget \
-        git \
-        htop \
-        net-tools \
-        vim \
-        nano \
-        build-essential \
-        libssl-dev \
-        libffi-dev \
-        python3-pip
-    
-    success "Paketler kuruldu"
+        curl wget git htop net-tools vim nano \
+        build-essential libssl-dev libffi-dev python3-pip
+    success "Bağımlılıklar kuruldu."
 }
 
-# ============================================
-# Docker ve Docker Compose Kurulumu
-# ============================================
-
 install_docker() {
-    info "Docker kuruluyordu..."
-    
+    info "Docker Engine kontrol ediliyor..."
     if command -v docker &> /dev/null; then
-        success "Docker zaten kurulu"
+        success "Docker zaten sistemde kurulu."
         return
     fi
-    
-    # Docker kurulum anahtarı ve deposu
+
+    info "Docker kurulumu başlatılıyor..."
     sudo apt-get remove -y docker docker-engine docker.io containerd runc || true
     
     sudo mkdir -p /etc/apt/keyrings
@@ -128,236 +81,121 @@ install_docker() {
     sudo apt-get update
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     
-    # Docker'ı başlat ve etkinleştir
     sudo systemctl start docker
     sudo systemctl enable docker
     
-    # Mevcut kullanıcıyı docker grubuna ekle
     if ! groups $USER | grep -q docker; then
         sudo usermod -aG docker $USER
-        warning "Docker grubuna eklendi. Lütfen yeni bir terminal açınız"
+        warning "Kullanıcınız docker grubuna eklendi. Değişikliklerin uygulanması için oturumu kapatıp açmanız gerekebilir."
     fi
-    
-    success "Docker kuruldu"
+    success "Docker başarıyla kuruldu."
 }
-
-# ============================================
-# Docker Compose Kontrol
-# ============================================
-
-install_docker_compose() {
-    info "Docker Compose kontrol ediliyor..."
-    
-    if command -v docker-compose &> /dev/null; then
-        success "Docker Compose zaten kurulu"
-        return
-    fi
-    
-    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    sudo chmod +x /usr/local/bin/docker-compose
-    
-    success "Docker Compose kuruldu"
-}
-
-# ============================================
-# Git Deposunu Klonla
-# ============================================
 
 clone_repository() {
-    info "Repository klonlanıyor..."
-    
+    info "Repository dizini kontrol ediliyor..."
     if [[ ! -d "aideployer" ]]; then
         git clone https://github.com/xquattro/aideployer.git aideployer
-        success "Repository klonlandı"
+        cd aideployer
+        success "Repository klonlandı."
     else
-        warning "Dizin zaten var, güncelleme yapılıyor..."
+        warning "aideployer dizini zaten mevcut, güncel kodlar çekiliyor..."
         cd aideployer
         git pull
-        cd ..
     fi
 }
-
-# ============================================
-# Çevre Dosyasını Hazırla
-# ============================================
 
 setup_env() {
-    info "Ortam dosyası hazırlanıyor..."
-    
-    cd aideployer
-    
+    info "Ortam dosyası (.env) kontrol ediliyor..."
     if [[ ! -f ".env" ]]; then
-        cp .env.example .env 2>/dev/null || echo "# Ortam dosyası oluşturuluyor..."
+        if [[ -f ".env.example" ]]; then
+            cp .env.example .env
+            info ".env.example dosyasından .env oluşturuldu."
+        else
+            error ".env.example dosyası bulunamadı. Lütfen repoda mevcut olduğundan emin olun."
+        fi
     fi
-    
-    success ".env dosyası hazır"
-    cd ..
+    success ".env dosyası hazır."
 }
-
-# ============================================
-# Nginx Klasörü ve SSL Dizini Oluştur
-# ============================================
-
-setup_nginx() {
-    info "Nginx yapılandırması hazırlanıyor..."
-    
-    cd aideployer
-    
-    mkdir -p nginx/ssl
-    
-    success "Nginx dizini oluşturuldu"
-    cd ..
-}
-
-# ============================================
-# Docker Containers'ı Başlat
-# ============================================
 
 start_containers() {
-    info "Docker containers başlatılıyor..."
+    info "Docker konteynerleri ayağa kaldırılıyor..."
+    docker compose up -d
+    success "Konteynerler arka planda başlatıldı."
     
-    cd aideployer
-    
-    docker-compose up -d
-    
-    success "Containers başlatıldı"
-    
-    # Containers'ın başlaması için bekle
-    info "Containers'ın hazır olması için bekleniyor (30 saniye)..."
+    info "Servislerin sağlık kontrolleri (Healthcheck) bekleniyor (30 sn)..."
     sleep 30
-    
-    cd ..
 }
-
-# ============================================
-# Ollama Model Yükle
-# ============================================
 
 download_ollama_model() {
-    info "Ollama modeli yükleniyor..."
-    
-    info "Misrtal modelini indiriyoruz (En populer ve hafif)..."
-    docker exec ollama ollama pull mistral
-    
-    success "Ollama modeli yüklendi"
+    info "Ollama üzerinde temel LLM modeli yükleniyor..."
+    info "Mistral modeli indiriliyor..."
+    docker exec -it ollama ollama pull mistral
+    success "Model başarıyla içeri aktarıldı."
 }
-
-# ============================================
-# Docker Compose Durumunu Göster
-# ============================================
 
 show_container_status() {
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}Docker Containers Durumu:${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-    echo ""
-    
-    cd aideployer
-    docker-compose ps
-    cd ..
+    echo -e "\n${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN} Servis Durumları (Docker Compose PS):${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}\n"
+    docker compose ps
 }
 
-# ============================================
-# Sistem Bilgileri Göster
-# ============================================
-
 show_system_info() {
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}Sistem Bilgileri:${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-    echo ""
-    
-    echo -e "${BLUE}IP Adresi:${NC}"
-    hostname -I
-    
-    echo ""
-    echo -e "${BLUE}CPU Bilgisi:${NC}"
-    nproc
-    
-    echo ""
-    echo -e "${BLUE}Bellek:${NC}"
+    echo -e "\n${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN} Sistem Kaynak Durumu:${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}\n"
+    echo -e "${BLUE}İşlemci Çekirdek Sayısı:${NC} $(nproc)"
+    echo -e "${BLUE}Bellek Durumu:${NC}"
     free -h | head -2
-    
-    echo ""
-    echo -e "${BLUE}Disk:${NC}"
+    echo -e "\n${BLUE}Disk Durumu:${NC}"
     df -h / | tail -1
 }
 
-# ============================================
-# Erişim Bilgileri
-# ============================================
-
 show_access_info() {
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}✓ KURULUM TAMAMLANDI!${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-    echo ""
-    
-    echo -e "${YELLOW}📍 Erişim Adresleri:${NC}"
-    echo ""
-    echo -e "${BLUE}Open WebUI:${NC}"
-    echo "  🌐 URL: http://204.168.255.122:8080"
-    echo "  👤 Kullanıcı: burak"
-    echo "  🔑 Şifre: Pass.123"
-    echo ""
-    
-    echo -e "${BLUE}n8n (Workflow):${NC}"
-    echo "  🌐 URL: http://204.168.255.122:5678"
-    echo "  👤 Kullanıcı: burak"
-    echo "  🔑 Şifre: Pass.123"
-    echo ""
-    
-    echo -e "${BLUE}Ollama API:${NC}"
-    echo "  🔌 Adres: http://204.168.255.122:11434"
-    echo "  📦 Model: mistral"
-    echo ""
-    
-    echo -e "${BLUE}PostgreSQL:${NC}"
-    echo "  🗄️  Adres: localhost:5432"
-    echo "  👤 Kullanıcı: n8n_user"
-    echo ""
-    
-    echo -e "${BLUE}Redis Cache:${NC}"
-    echo "  💾 Adres: localhost:6379"
-    echo ""
-    
-    echo -e "${YELLOW}📋 Faydalı Komutlar:${NC}"
-    echo ""
-    echo "  # Containers durumunu görmek:"
-    echo "  cd aideployer && docker-compose ps"
-    echo ""
-    echo "  # Logs görmek:"
-    echo "  docker-compose logs -f open-webui"
-    echo "  docker-compose logs -f n8n"
-    echo ""
-    echo "  # Containers'ı durdur:"
-    echo "  docker-compose down"
-    echo ""
-    echo "  # Containers'ı yeniden başlat:"
-    echo "  docker-compose restart"
-    echo ""
-    
-    echo -e "${YELLOW}📖 Sonraki Adımlar:${NC}"
-    echo ""
-    echo "  1. Open WebUI'ye girin: http://204.168.255.122:8080"
-    echo "  2. n8n'de workflow oluşturun: http://204.168.255.122:5678"
-    echo "  3. SSL sertifikası ekleyin (eğer domain varsa)"
-    echo ""
-}
+    LOCAL_IP=$(hostname -I | awk '{print $1}')
+    PUBLIC_IP=$(curl -s --max-time 5 https://ifconfig.me || echo "$LOCAL_IP")
 
-# ============================================
-# Ana Kurulum Fonksiyonu
-# ============================================
+    echo -e "\n${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}✓ KURULUM BAŞARIYLA TAMAMLANDI!${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}\n"
+    
+    echo -e "${YELLOW}📍 Erişim Detayları:${NC}\n"
+    echo -e "${BLUE}Open WebUI (Arayüz):${NC}"
+    echo "  🌐 URL: http://${PUBLIC_IP}:8080"
+    echo "  💡 Not: İlk girişte oluşturacağınız hesap yönetici hesabı olacaktır."
+    echo ""
+    echo -e "${BLUE}n8n (Otomasyon):${NC}"
+    echo "  🌐 URL: http://${PUBLIC_IP}:5678"
+    echo ""
+    echo -e "${BLUE}Ollama API Endpoint:${NC}"
+    echo "  🔌 Adres: http://${PUBLIC_IP}:11434"
+    echo "  📦 Varsayılan Model: mistral"
+    echo ""
+    echo -e "${BLUE}PostgreSQL:${NC}"
+    echo "  🗄️  Port: 5432 (Konteyner içi ağda çalışır)"
+    echo ""
+    echo -e "${BLUE}Redis Cache:${NC}"
+    echo "  💾 Port: 6379"
+    echo ""
+    
+    echo -e "${YELLOW}📋 Temel Yönetim Komutları:${NC}\n"
+    echo "  # Konteyner durumlarını inceleme:"
+    echo "  docker compose ps"
+    echo ""
+    echo "  # Canlı log takibi:"
+    echo "  docker compose logs -f [servis_adi]"
+    echo ""
+    echo "  # Altyapıyı durdurma:"
+    echo "  docker compose down"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}\n"
+}
 
 main() {
     print_logo
-    
     read -p "$(echo -e "${YELLOW}Kuruluma başlamak istiyor musunuz? (e/h): ${NC}")" choice
-    if [[ "$choice" != "e" ]]; then
-        info "Kurulum iptal edildi"
+    if [[ "$choice" != "e" && "$choice" != "E" ]]; then
+        info "Kurulum kullanıcı tarafından iptal edildi."
         exit 0
     fi
     
@@ -365,17 +203,13 @@ main() {
     update_system
     install_dependencies
     install_docker
-    install_docker_compose
     clone_repository
     setup_env
-    setup_nginx
     start_containers
     download_ollama_model
-    
     show_container_status
     show_system_info
     show_access_info
 }
 
-# Kurulumu çalıştır
 main "$@"
