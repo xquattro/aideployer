@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ============================================
   # Ollama - Yerel LLM Motoru
@@ -15,19 +13,13 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - ai-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
   # ============================================
   # Open WebUI - Arayüz Katmanı
@@ -46,7 +38,7 @@ services:
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
     depends_on:
       ollama:
-        condition: service_healthy
+        condition: service_started
     networks:
       - ai-network
     healthcheck:
@@ -106,7 +98,7 @@ services:
     networks:
       - ai-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.request('http://localhost:5678/healthz', { timeout: 2000 }, (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -124,7 +116,6 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      - certbot_data:/etc/letsencrypt:ro
       - webui_cache:/var/cache/nginx
     depends_on:
       - open-webui
@@ -136,32 +127,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ============================================
-  # Certbot - SSL Sertifikaları (Let's Encrypt)
-  # ============================================
-  certbot:
-    image: certbot/certbot:latest
-    container_name: certbot
-    restart: unless-stopped
-    volumes:
-      - certbot_data:/etc/letsencrypt
-      - ./nginx/ssl:/var/www/certbot:rw
-    environment:
-      - CERTBOT_EMAIL=${CERTBOT_EMAIL}
-      - CERTBOT_DOMAIN=${CERTBOT_DOMAIN}
-    entrypoint: >
-      sh -c 'if [ ! -f /etc/letsencrypt/live/${CERTBOT_DOMAIN}/fullchain.pem ]; then
-        certbot certonly --webroot -w /var/www/certbot --non-interactive --agree-tos 
-        -m ${CERTBOT_EMAIL} -d ${CERTBOT_DOMAIN};
-      fi && 
-      trap exit TERM; 
-      while :; do 
-        certbot renew --quiet; 
-        sleep 12h & wait $${!}; 
-      done;'
-    networks:
-      - ai-network
 
   # ============================================
   # Redis - Cache (Opsiyonel - Performans)
@@ -188,7 +153,6 @@ volumes:
   postgres_data:
   n8n_data:
   redis_data:
-  certbot_data:
   webui_cache:
 
 networks:
